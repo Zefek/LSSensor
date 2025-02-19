@@ -94,11 +94,11 @@ void loop() {
       mqttClient.Publish(ELSPODEK, data2);
       mqttClient.Disconnect();
       
-      attachInterrupt(digitalPinToInterrupt(2), WattMetter1Received, RISING);
-      attachInterrupt(digitalPinToInterrupt(3), WattMetter2Received, RISING);
       wattMetter1Counter = 0;
       wattMetter2Counter = 0;
     }
     lastSendToMQTT = currentMillis;
+    attachInterrupt(digitalPinToInterrupt(2), WattMetter1Received, RISING);
+    attachInterrupt(digitalPinToInterrupt(3), WattMetter2Received, RISING);
   }
 }
