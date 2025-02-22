@@ -72,18 +72,12 @@ void setup() {
 
 void loop() {
   unsigned long currentMillis = millis();
-  Serial.print("W1: ");
-  Serial.println(wattMetter1Counter);
   if(currentMillis - lastSendToMQTT >= 300000)
   {    
     char data[5];
     char data2[5];
     detachInterrupt(digitalPinToInterrupt(2));
     detachInterrupt(digitalPinToInterrupt(3));
-    Serial.print("W1: ");
-    Serial.println(wattMetter1Counter);
-    Serial.print("W2: ");
-    Serial.println(wattMetter2Counter);
     sprintf(data, "%d", (int)round(wattMetter1Counter * 10));
     sprintf(data2, "%d", (int)round(wattMetter2Counter * 10));
     if(Connect())
