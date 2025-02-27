@@ -2,6 +2,7 @@
 #include <MQTTClient.h>
 #include <SoftwareSerial.h>
 #include "config.h"
+#include<avr/wdt.h>
 
 #define LSSensorPIN1 2
 #define SENDINTERVAL 5 * 60 * 1000 //5 minut
@@ -68,12 +69,16 @@ void setup() {
   attachInterrupt(digitalPinToInterrupt(2), WattMetter1Received, RISING);
   attachInterrupt(digitalPinToInterrupt(3), WattMetter2Received, RISING);
   Serial.println("Setup OK");
+  wdt_enable(WDTO_8S);
 }
 
 void loop() {
+  wdt_reset();
   unsigned long currentMillis = millis();
   if(currentMillis - lastSendToMQTT >= 300000)
   {    
+    Serial.println(wattMetter1Counter);
+    Serial.println(wattMetter2Counter);
     char data[5];
     char data2[5];
     detachInterrupt(digitalPinToInterrupt(2));
