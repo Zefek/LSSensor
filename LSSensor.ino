@@ -12,6 +12,8 @@ void MQTTMessageReceive(char* topic, uint8_t* payload, uint16_t length) { }
 SoftwareSerial serial(4, 5);
 EspDrv espDrv(&serial);
 MQTTClient mqttClient(&espDrv, MQTTMessageReceive);
+char data[5];
+char data2[5];
 
 float wattMetter1Counter = 0;
 float wattMetter2Counter = 0;
@@ -79,8 +81,6 @@ void loop() {
   {    
     Serial.println(wattMetter1Counter);
     Serial.println(wattMetter2Counter);
-    char data[5];
-    char data2[5];
     detachInterrupt(digitalPinToInterrupt(2));
     detachInterrupt(digitalPinToInterrupt(3));
     sprintf(data, "%d", (int)round(wattMetter1Counter * 10));
