@@ -2,12 +2,13 @@
 #include <MQTTClient.h>
 #include <SoftwareSerial.h>
 #include "config.h"
-#include<avr/wdt.h>
+#include <avr/wdt.h>
 
 #define LSSensorPIN1 2
 #define SENDINTERVAL 5 * 60 * 1000 //5 minut
 
 void MQTTMessageReceive(char* topic, uint8_t* payload, uint16_t length) { }
+MQTTConnectData mqttConnectData = { MQTTHost, 1883, "WattMeter", MQTTUsername, MQTTPassword, "", 0, false, "", false, 0x0 }; 
 
 SoftwareSerial serial(4, 5);
 EspDrv espDrv(&serial);
@@ -54,7 +55,7 @@ bool Connect()
     uint8_t clientStatus = espDrv.GetClientStatus();
     if(clientStatus == CL_DISCONNECTED)
     {
-      return mqttClient.Connect(MQTTHost, 1883, "WattMeter", MQTTUsername, MQTTPassword, "", 0, false, "", false);
+      return mqttClient.Connect(mqttConnectData);
     }
   }
   return false;
@@ -64,9 +65,9 @@ void setup() {
   // put your setup code here, to run once:
   pinMode(2, INPUT);
   pinMode(3, INPUT);
-  Serial.begin(57600);
-  serial.begin(57600);
-  espDrv.Init();
+  Serial.begin(31250);
+  serial.begin(31250);
+  espDrv.Init(16);
   espDrv.Connect(WifiSSID, WifiPassword);
   attachInterrupt(digitalPinToInterrupt(2), WattMetter1Received, RISING);
   attachInterrupt(digitalPinToInterrupt(3), WattMetter2Received, RISING);
