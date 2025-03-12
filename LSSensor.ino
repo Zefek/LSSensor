@@ -16,8 +16,8 @@ MQTTClient mqttClient(&espDrv, MQTTMessageReceive);
 char data[5];
 char data2[5];
 
-float wattMetter1Counter = 0;
-float wattMetter2Counter = 0;
+int wattMetter1Counter = 0;
+int wattMetter2Counter = 0;
 unsigned long lastSendToMQTT = 0;
 
 unsigned long lastTime = 0;
@@ -26,7 +26,7 @@ void WattMetter1Received()
   unsigned long time = millis();
   if(time - lastTime > 84)
   {
-    wattMetter1Counter += 0.1;
+    wattMetter1Counter++;
     lastTime = time;
   }
 }
@@ -37,7 +37,7 @@ void WattMetter2Received()
   unsigned long time = millis();
   if(time - lastTime2 > 84)
   {
-    wattMetter2Counter += 0.1;
+    wattMetter2Counter++;
     lastTime2 = time;
   }
 }
@@ -65,8 +65,8 @@ void setup() {
   // put your setup code here, to run once:
   pinMode(2, INPUT);
   pinMode(3, INPUT);
-  Serial.begin(31250);
-  serial.begin(31250);
+  Serial.begin(57600);
+  serial.begin(57600);
   espDrv.Init(16);
   espDrv.Connect(WifiSSID, WifiPassword);
   attachInterrupt(digitalPinToInterrupt(2), WattMetter1Received, RISING);
@@ -80,12 +80,12 @@ void loop() {
   unsigned long currentMillis = millis();
   if(currentMillis - lastSendToMQTT >= 300000)
   {    
-    Serial.println(wattMetter1Counter);
-    Serial.println(wattMetter2Counter);
     detachInterrupt(digitalPinToInterrupt(2));
     detachInterrupt(digitalPinToInterrupt(3));
-    sprintf(data, "%d", (int)round(wattMetter1Counter * 10));
-    sprintf(data2, "%d", (int)round(wattMetter2Counter * 10));
+    Serial.println(wattMetter1Counter);
+    Serial.println(wattMetter2Counter);
+    sprintf(data, "%d", wattMetter1Counter);
+    sprintf(data2, "%d", wattMetter2Counter);
     if(Connect())
     {
       mqttClient.Publish(ELVRCH, "0");
