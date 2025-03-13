@@ -57,6 +57,10 @@ bool Connect()
     {
       return mqttClient.Connect(mqttConnectData);
     }
+    else
+    {
+      return true;
+    }
   }
   return false;
 }
@@ -65,8 +69,8 @@ void setup() {
   // put your setup code here, to run once:
   pinMode(2, INPUT);
   pinMode(3, INPUT);
-  Serial.begin(57600);
-  serial.begin(57600);
+  Serial.begin(74880);
+  serial.begin(74880);
   espDrv.Init(16);
   espDrv.Connect(WifiSSID, WifiPassword);
   attachInterrupt(digitalPinToInterrupt(2), WattMetter1Received, RISING);
