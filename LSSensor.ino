@@ -13,8 +13,7 @@ MQTTConnectData mqttConnectData = { MQTTHost, 1883, "WattMeter", MQTTUsername, M
 SoftwareSerial serial(4, 5);
 EspDrv espDrv(&serial);
 MQTTClient mqttClient(&espDrv, MQTTMessageReceive);
-char data[5];
-char data2[5];
+char data[32];
 
 int wattMetter1Counter = 0;
 int wattMetter2Counter = 0;
@@ -88,14 +87,12 @@ void loop() {
     detachInterrupt(digitalPinToInterrupt(3));
     Serial.println(wattMetter1Counter);
     Serial.println(wattMetter2Counter);
-    sprintf(data, "%d", wattMetter1Counter);
-    sprintf(data2, "%d", wattMetter2Counter);
     if(Connect())
     {
-      mqttClient.Publish(ELVRCH, "0");
-      mqttClient.Publish(ELVRCH, data);
-      mqttClient.Publish(ELSPODEK, "0");
-      mqttClient.Publish(ELSPODEK, data2);
+      sprintf(data, "{\"V\":%d,\"S\":%d}", 0, 0);
+      mqttClient.Publish(ELCONSUMPTION, data);
+      sprintf(data, "{\"V\":%d,\"S\":%d}", wattMetter1Counter, wattMetter2Counter);
+      mqttClient.Publish(ELCONSUMPTION, data);
       mqttClient.Disconnect();
       
       wattMetter1Counter = 0;
