@@ -35,9 +35,6 @@ jobs:
         if: runner.os != 'Windows'
         run: printenv
 
-      - name: List all environment variables (Windows)
-        if: runner.os == 'Windows'
-        run: set
       - name: Checkout repository
         uses: actions/checkout@v3
 
