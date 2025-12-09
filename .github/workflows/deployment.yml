@@ -1,0 +1,65 @@
+name: Deploy LS Sensor on Environment
+
+on:
+  deployment:
+
+jobs:
+  deployment:
+    runs-on: self-hosted
+    environment: Home
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Install Arduino CLI (Windows)
+        shell: powershell
+        run: |
+          $url = "https://downloads.arduino.cc/arduino-cli/arduino-cli_latest_Windows_64bit.zip"
+          $out = "$RUNNER_TOOL_CACHE\arduino-cli.zip"
+          Invoke-WebRequest -Uri $url -OutFile $out
+
+          $target = "$RUNNER_TOOL_CACHE\arduino-cli"
+          Expand-Archive -Path $out -DestinationPath $target -Force
+
+          # Přidat do PATH jen pro tento job
+          $env:PATH = "$target;$env:PATH"
+    
+          # Volitelně: otestovat
+          $RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe version
+
+      - name: Initialize Arduino CLI
+        run: |
+          $RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe config init
+          $RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe core update-index
+
+      - name: Install required board core
+        run: $RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe core install arduino:avr 
+          
+      - name: Install custom Arduino libraries (Windows)
+        shell: powershell
+        run: |
+          $arduinoLib = "$env:USERPROFILE\Documents\Arduino\libraries"
+          if (Test-Path "$arduinoLib\MQTTESP8266") {
+            Remove-Item -Recurse -Force "$arduinoLib\MQTTESP8266"
+          }
+          New-Item -ItemType Directory -Force -Path $arduinoLib
+          git clone https://github.com/Zefek/MQTTESP8266.git "$arduinoLib\MQTTESP8266"
+
+      - name: Set configs (Windows)
+        shell: powershell
+        run: |
+          $env:CONFIG_H | Out-File -Encoding ascii config.h
+          $env:SENSORSCONFIG_H | Out-File -Encoding ascii sensorsconfig.h
+        env:
+          CONFIG_H: ${{ secrets.CONFIG_H }}
+          SENSORSCONFIG_H: ${{ secrets.SENSORSCONFIG_H }}
+
+      - name: Compile Arduino project
+        run: |
+          $RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe compile --fqbn arduino:avr:uno ./ --output-dir build
+
+      - name: Upload firmware to Arduino
+        run: |
+          $port = "${{ github.event.deployment.payload.serial_port }}"
+          $RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe upload --fqbn arduino:avr:uno --port $port --input-dir build
