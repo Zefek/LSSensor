@@ -56,11 +56,12 @@ jobs:
 
       - name: Initialize Arduino CLI
         run: |
-          $Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe config init
-          $Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe core update-index
+          & "$Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe" config init
+          & "$Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe" core update-index
 
       - name: Install required board core
-        run: $Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe core install arduino:avr 
+        run: | 
+          & "$Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe" core install arduino:avr 
           
       - name: Install custom Arduino libraries (Windows)
         shell: powershell
@@ -81,9 +82,9 @@ jobs:
 
       - name: Compile Arduino project
         run: |
-          $Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe compile --fqbn arduino:avr:uno ./ --output-dir build
+          & "$Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe" compile --fqbn arduino:avr:uno ./ --output-dir build
 
       - name: Upload firmware to Arduino
         run: |
           $port = "${{ github.event.deployment.payload.serial_port }}"
-          $Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe upload --fqbn arduino:avr:uno --port $port --input-dir build
+          & "$Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe" upload --fqbn arduino:avr:uno --port $port --input-dir build
