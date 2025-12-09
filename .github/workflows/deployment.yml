@@ -71,7 +71,7 @@ jobs:
             Remove-Item -Recurse -Force "$arduinoLib\MQTTESP8266"
           }
           New-Item -ItemType Directory -Force -Path $arduinoLib
-          git clone https://github.com/Zefek/MQTTESP8266.git "$arduinoLib\MQTTESP8266"
+          & "$Env:RUNNER_TOOL_CACHE\git\bin\git" clone https://github.com/Zefek/MQTTESP8266.git "$arduinoLib\MQTTESP8266"
 
       - name: Set configs (Windows)
         shell: powershell
