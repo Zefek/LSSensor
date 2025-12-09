@@ -52,7 +52,7 @@ jobs:
           $env:PATH = "$target;$env:PATH"
     
           # Volitelně: otestovat
-          $Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe version
+          & "$Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe" version
 
       - name: Initialize Arduino CLI
         run: |
