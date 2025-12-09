@@ -45,25 +45,25 @@ jobs:
         shell: powershell
         run: |
           $url = "https://downloads.arduino.cc/arduino-cli/arduino-cli_latest_Windows_64bit.zip"
-          $out = "$RUNNER_TOOL_CACHE\arduino-cli.zip"
+          $out = "$Env:RUNNER_TOOL_CACHE\arduino-cli.zip"
           Invoke-WebRequest -Uri $url -OutFile $out
 
-          $target = "$RUNNER_TOOL_CACHE\arduino-cli"
+          $target = "$Env:RUNNER_TOOL_CACHE\arduino-cli"
           Expand-Archive -Path $out -DestinationPath $target -Force
 
           # Přidat do PATH jen pro tento job
           $env:PATH = "$target;$env:PATH"
     
           # Volitelně: otestovat
-          $RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe version
+          $Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe version
 
       - name: Initialize Arduino CLI
         run: |
-          $RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe config init
-          $RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe core update-index
+          $Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe config init
+          $Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe core update-index
 
       - name: Install required board core
-        run: $RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe core install arduino:avr 
+        run: $Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe core install arduino:avr 
           
       - name: Install custom Arduino libraries (Windows)
         shell: powershell
@@ -84,9 +84,9 @@ jobs:
 
       - name: Compile Arduino project
         run: |
-          $RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe compile --fqbn arduino:avr:uno ./ --output-dir build
+          $Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe compile --fqbn arduino:avr:uno ./ --output-dir build
 
       - name: Upload firmware to Arduino
         run: |
           $port = "${{ github.event.deployment.payload.serial_port }}"
-          $RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe upload --fqbn arduino:avr:uno --port $port --input-dir build
+          $Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe upload --fqbn arduino:avr:uno --port $port --input-dir build
