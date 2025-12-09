@@ -9,6 +9,35 @@ jobs:
     environment: Home
 
     steps:
+      - name: Show basic GitHub context
+        run: |
+          echo "Repository: ${{ github.repository }}"
+          echo "Ref: ${{ github.ref }}"
+          echo "Actor: ${{ github.actor }}"
+
+      - name: Show runner environment variables (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          echo "RUNNER_TOOL_CACHE: $RUNNER_TOOL_CACHE"
+          echo "RUNNER_TEMP: $RUNNER_TEMP"
+          echo "HOME: $HOME"
+          echo "PATH: $PATH"
+
+      - name: Show runner environment variables (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          echo "RUNNER_TOOL_CACHE: $Env:RUNNER_TOOL_CACHE"
+          echo "RUNNER_TEMP: $Env:RUNNER_TEMP"
+          echo "USERPROFILE: $Env:USERPROFILE"
+          echo "PATH: $Env:PATH"
+
+      - name: List all environment variables (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: printenv
+
+      - name: List all environment variables (Windows)
+        if: runner.os == 'Windows'
+        run: set
       - name: Checkout repository
         uses: actions/checkout@v3
 
@@ -50,10 +79,8 @@ jobs:
         shell: powershell
         run: |
           $env:CONFIG_H | Out-File -Encoding ascii config.h
-          $env:SENSORSCONFIG_H | Out-File -Encoding ascii sensorsconfig.h
         env:
           CONFIG_H: ${{ secrets.CONFIG_H }}
-          SENSORSCONFIG_H: ${{ secrets.SENSORSCONFIG_H }}
 
       - name: Compile Arduino project
         run: |
