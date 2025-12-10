@@ -9,69 +9,23 @@ jobs:
     environment: Home
 
     steps:
-      - name: Show basic GitHub context
-        run: |
-          echo "Repository: ${{ github.repository }}"
-          echo "Ref: ${{ github.ref }}"
-          echo "Actor: ${{ github.actor }}"
-
-      - name: Show runner environment variables (Linux/macOS)
-        if: runner.os != 'Windows'
-        run: |
-          echo "RUNNER_TOOL_CACHE: $RUNNER_TOOL_CACHE"
-          echo "RUNNER_TEMP: $RUNNER_TEMP"
-          echo "HOME: $HOME"
-          echo "PATH: $PATH"
-
-      - name: Show runner environment variables (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          echo "RUNNER_TOOL_CACHE: $Env:RUNNER_TOOL_CACHE"
-          echo "RUNNER_TEMP: $Env:RUNNER_TEMP"
-          echo "USERPROFILE: $Env:USERPROFILE"
-          echo "PATH: $Env:PATH"
-
-      - name: List all environment variables (Linux/macOS)
-        if: runner.os != 'Windows'
-        run: printenv
 
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Install Arduino CLI (Windows)
-        shell: powershell
-        run: |
-          $url = "https://downloads.arduino.cc/arduino-cli/arduino-cli_latest_Windows_64bit.zip"
-          $out = "$Env:RUNNER_TOOL_CACHE\arduino-cli.zip"
-          Invoke-WebRequest -Uri $url -OutFile $out
-
-          $target = "$Env:RUNNER_TOOL_CACHE\arduino-cli"
-          Expand-Archive -Path $out -DestinationPath $target -Force
-
-          # Přidat do PATH jen pro tento job
-          $env:PATH = "$target;$env:PATH"
-    
-          # Volitelně: otestovat
-          & "$Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe" version
-
       - name: Initialize Arduino CLI
         run: |
-          & "$Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe" config init
-          & "$Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe" core update-index
+          & "$Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe" config.yaml config init
+          & "$Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe" config.yaml core update-index
 
       - name: Install required board core
         run: | 
-          & "$Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe" core install arduino:avr 
+          & "$Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe" config.yaml core install arduino:avr 
           
       - name: Install custom Arduino libraries (Windows)
         shell: powershell
         run: |
-          $arduinoLib = "$env:USERPROFILE\Documents\Arduino\libraries"
-          if (Test-Path "$arduinoLib\MQTTESP8266") {
-            Remove-Item -Recurse -Force "$arduinoLib\MQTTESP8266"
-          }
-          New-Item -ItemType Directory -Force -Path $arduinoLib
-          & "$Env:RUNNER_TOOL_CACHE\git\bin\git" clone https://github.com/Zefek/MQTTESP8266.git "$arduinoLib\MQTTESP8266"
+          & "$Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe" config.yaml lib install MQTTESP8266
 
       - name: Set configs (Windows)
         shell: powershell
@@ -82,9 +36,9 @@ jobs:
 
       - name: Compile Arduino project
         run: |
-          & "$Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe" compile --fqbn arduino:avr:uno ./ --output-dir build
+          & "$Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe" config.yaml compile --fqbn arduino:avr:uno ./ --output-dir build
 
       - name: Upload firmware to Arduino
         run: |
           $port = "${{ github.event.deployment.payload.serial_port }}"
-          & "$Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe" upload --fqbn arduino:avr:uno --port $port --input-dir build
+          & "$Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe" config.yaml upload --fqbn arduino:avr:uno --port $port --input-dir build
