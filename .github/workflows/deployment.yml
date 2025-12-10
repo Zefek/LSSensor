@@ -15,7 +15,6 @@ jobs:
 
       - name: Initialize Arduino CLI
         run: |
-          & "$Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe" --config-file config.yaml config init
           & "$Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe" --config-file config.yaml core update-index
 
       - name: Install required board core
