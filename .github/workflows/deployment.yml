@@ -5,7 +5,7 @@ on:
 
 jobs:
   deployment:
-    runs-on: self-hosted
+    runs-on: [self-hosted, iot]
     environment: Home
 
     steps:
