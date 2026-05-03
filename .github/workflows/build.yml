@@ -32,6 +32,7 @@ jobs:
       - name: Set configs
         run: |
           cp config_default.h config.h
+          cp secret_default.h secret.h
 
       - name: Compile Arduino project
         run: |
