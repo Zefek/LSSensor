@@ -143,7 +143,6 @@ void loop() {
       mqttClient.Publish(ELCONSUMPTION, data);
       sprintf(data, "{\"V\":%d,\"S\":%d}", wattMetter1Counter, wattMetter2Counter);
       mqttClient.Publish(ELCONSUMPTION, data);
-      mqttClient.Disconnect();
       
       wattMetter1Counter = 0;
       wattMetter2Counter = 0;
@@ -152,6 +151,7 @@ void loop() {
       currentDiagData.freeRam = freeRam();
       mqttClient.Publish(LSSENSOR_DIAG, (const uint8_t*)&currentDiagData, sizeof(DiagData), false);
       currentDiagData.loopMaxMs = 0;
+      mqttClient.Disconnect();
     }
     lastSendToMQTT = currentMillis;
     attachInterrupt(digitalPinToInterrupt(LSSensorPIN1), WattMetter1Received, RISING);
