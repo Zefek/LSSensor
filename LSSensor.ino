@@ -18,13 +18,31 @@ SoftwareSerial serial(4, 5);
 EspDrv espDrv(&serial);
 MQTTClient mqttClient(&espDrv, MQTTMessageReceive);
 char data[32];
-
 int wattMetter1Counter = 0;
 int wattMetter2Counter = 0;
 unsigned long lastSendToMQTT = 0;
-
 unsigned long lastTime = 0;
 bool closeRequired = false;
+
+#pragma pack(push, 1)
+struct DiagData {
+  uint32_t uptime;
+  uint16_t freeRam;
+  uint16_t wifiReconn;
+  uint16_t mqttFailCount;
+  uint8_t  resetReason;
+  uint16_t loopMaxMs;
+};
+#pragma pack(pop)
+
+DiagData currentDiagData;
+
+extern int __heap_start, *__brkval;
+int freeRam() {
+  int v;
+  return (int)&v - (__brkval == 0 ? (int)&__heap_start : (int)__brkval);
+}
+
 void WattMetter1Received()
 {
   unsigned long time = millis();
@@ -53,6 +71,10 @@ bool Connect()
   if(wifiStatus == WL_DISCONNECTED || wifiStatus == WL_IDLE_STATUS)
   {
     wifiConnected = espDrv.Connect(WifiSSID, WifiPassword);
+    if(currentDiagData.wifiReconn < 65535) 
+    {
+      currentDiagData.wifiReconn++;
+    }
   }
   if(wifiConnected)
   {
@@ -60,7 +82,9 @@ bool Connect()
     bool isConnected = mqttClient.IsConnected();
     if(!isConnected)
     {
-      return mqttClient.Connect(mqttConnectData);
+      bool ok = mqttClient.Connect(mqttConnectData);
+      if(!ok && currentDiagData.mqttFailCount < 65535) currentDiagData.mqttFailCount++;
+      return ok;
     }
     else
     {
@@ -83,6 +107,8 @@ void OnBusy(uint8_t count)
 }
 
 void setup() {
+  currentDiagData.resetReason = MCUSR;
+  MCUSR = 0;
   // put your setup code here, to run once:
   pinMode(LSSensorPIN1, INPUT);
   pinMode(LSSensorPIN2, INPUT);
@@ -99,6 +125,7 @@ void setup() {
 }
 
 void loop() {
+  unsigned long currentMillis = millis();
   wdt_reset();
   if(closeRequired)
   {
@@ -106,7 +133,6 @@ void loop() {
     closeRequired = false;
   }
   mqttClient.Loop();
-  unsigned long currentMillis = millis();
   if(currentMillis - lastSendToMQTT >= 300000)
   {    
     detachInterrupt(digitalPinToInterrupt(LSSensorPIN1));
@@ -121,9 +147,19 @@ void loop() {
       
       wattMetter1Counter = 0;
       wattMetter2Counter = 0;
+
+      currentDiagData.uptime = currentMillis / 60000UL;
+      currentDiagData.freeRam = freeRam();
+      mqttClient.Publish(LSSENSOR_DIAG, (const uint8_t*)&currentDiagData, sizeof(DiagData), false);
+      currentDiagData.loopMaxMs = 0;
     }
     lastSendToMQTT = currentMillis;
     attachInterrupt(digitalPinToInterrupt(LSSensorPIN1), WattMetter1Received, RISING);
     attachInterrupt(digitalPinToInterrupt(LSSensorPIN2), WattMetter2Received, RISING);
+  }
+  unsigned long iterDur = millis() - currentMillis;
+  if(iterDur > currentDiagData.loopMaxMs) 
+  {
+    currentDiagData.loopMaxMs = (iterDur > 65535UL) ? 65535 : (uint16_t)iterDur;
   }
 }
