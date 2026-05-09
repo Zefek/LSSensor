@@ -9,6 +9,8 @@
 #define SENDINTERVAL 5 * 60 * 1000 //5 minut
 
 void MQTTMessageReceive(char* topic, uint8_t* payload, uint16_t length) { }
+void OnBusy(uint8_t count);
+void DataTimeout();
 MQTTConnectData mqttConnectData = { MQTTHost, 1883, "WattMeter", MQTTUsername, MQTTPassword, "", 0, false, "", false, 0x0F }; 
 
 SoftwareSerial serial(4, 5);
@@ -21,6 +23,7 @@ int wattMetter2Counter = 0;
 unsigned long lastSendToMQTT = 0;
 
 unsigned long lastTime = 0;
+bool closeRequired = false;
 void WattMetter1Received()
 {
   unsigned long time = millis();
@@ -66,6 +69,18 @@ bool Connect()
   return false;
 }
 
+void DataTimeout()
+{
+  closeRequired = true;
+}
+void OnBusy(uint8_t count)
+{
+  if(count > 10)
+  {
+    closeRequired = true;
+  }
+}
+
 void setup() {
   // put your setup code here, to run once:
   pinMode(2, INPUT);
@@ -73,6 +88,8 @@ void setup() {
   Serial.begin(57600);
   serial.begin(57600);
   espDrv.Init(16);
+  espDrv.OnBusy = OnBusy;
+  espDrv.DataTimeout = DataTimeout;
   espDrv.Connect(WifiSSID, WifiPassword);
   attachInterrupt(digitalPinToInterrupt(2), WattMetter1Received, RISING);
   attachInterrupt(digitalPinToInterrupt(3), WattMetter2Received, RISING);
@@ -82,6 +99,11 @@ void setup() {
 
 void loop() {
   wdt_reset();
+  if(closeRequired)
+  {
+    espDrv.Close();
+    closeRequired = false;
+  }
   mqttClient.Loop();
   unsigned long currentMillis = millis();
   if(currentMillis - lastSendToMQTT >= 300000)

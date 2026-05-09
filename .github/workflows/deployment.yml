@@ -12,19 +12,12 @@ jobs:
 
       - name: Checkout repository
         uses: actions/checkout@v6
+        with:
+          submodules: true
 
       - name: Initialize Arduino CLI
         run: |
           & "$Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe" --config-file config.yaml core update-index
-
-      - name: Install required board core
-        run: | 
-          & "$Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe" --config-file config.yaml core install arduino:avr@1.8.7
-          
-      - name: Install custom Arduino libraries (Windows)
-        shell: powershell
-        run: |
-          & "$Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe" --config-file config.yaml lib install "MQTTESP8266@5.1.2"
 
       - name: Set configs (Windows)
         shell: powershell
@@ -72,7 +65,7 @@ jobs:
 
       - name: Compile Arduino project
         run: |
-          & "$Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe" --config-file config.yaml compile --fqbn arduino:avr:uno ./ --output-dir build
+          & "$Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe" --config-file config.yaml compile --profile LSSensor_Uno ./ --output-dir build
 
       - name: Upload firmware to Arduino
         env:
@@ -82,4 +75,4 @@ jobs:
             Write-Error "Invalid serial port format: $env:SERIAL_PORT"
             exit 1
           }
-          & "$Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe" --config-file config.yaml upload --fqbn arduino:avr:uno --port $env:SERIAL_PORT --input-dir build
+          & "$Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe" --config-file config.yaml upload --profile LSSensor_Uno --port $env:SERIAL_PORT --input-dir build
