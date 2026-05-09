@@ -6,6 +6,7 @@
 #include <avr/wdt.h>
 
 #define LSSensorPIN1 2
+#define LSSensorPIN2 3
 #define SENDINTERVAL 5 * 60 * 1000 //5 minut
 
 void MQTTMessageReceive(char* topic, uint8_t* payload, uint16_t length) { }
@@ -83,16 +84,16 @@ void OnBusy(uint8_t count)
 
 void setup() {
   // put your setup code here, to run once:
-  pinMode(2, INPUT);
-  pinMode(3, INPUT);
+  pinMode(LSSensorPIN1, INPUT);
+  pinMode(LSSensorPIN2, INPUT);
   Serial.begin(57600);
   serial.begin(57600);
   espDrv.Init(16);
   espDrv.OnBusy = OnBusy;
   espDrv.DataTimeout = DataTimeout;
   espDrv.Connect(WifiSSID, WifiPassword);
-  attachInterrupt(digitalPinToInterrupt(2), WattMetter1Received, RISING);
-  attachInterrupt(digitalPinToInterrupt(3), WattMetter2Received, RISING);
+  attachInterrupt(digitalPinToInterrupt(LSSensorPIN1), WattMetter1Received, RISING);
+  attachInterrupt(digitalPinToInterrupt(LSSensorPIN2), WattMetter2Received, RISING);
   Serial.println("Setup OK");
   wdt_enable(WDTO_8S);
 }
@@ -108,8 +109,8 @@ void loop() {
   unsigned long currentMillis = millis();
   if(currentMillis - lastSendToMQTT >= 300000)
   {    
-    detachInterrupt(digitalPinToInterrupt(2));
-    detachInterrupt(digitalPinToInterrupt(3));
+    detachInterrupt(digitalPinToInterrupt(LSSensorPIN1));
+    detachInterrupt(digitalPinToInterrupt(LSSensorPIN2));
     if(Connect())
     {
       sprintf(data, "{\"V\":%d,\"S\":%d}", 0, 0);
@@ -122,7 +123,7 @@ void loop() {
       wattMetter2Counter = 0;
     }
     lastSendToMQTT = currentMillis;
-    attachInterrupt(digitalPinToInterrupt(2), WattMetter1Received, RISING);
-    attachInterrupt(digitalPinToInterrupt(3), WattMetter2Received, RISING);
+    attachInterrupt(digitalPinToInterrupt(LSSensorPIN1), WattMetter1Received, RISING);
+    attachInterrupt(digitalPinToInterrupt(LSSensorPIN2), WattMetter2Received, RISING);
   }
 }
