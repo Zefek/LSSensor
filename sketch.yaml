@@ -1,0 +1,8 @@
+profiles:
+  LSSensor_Uno:
+    fqbn: arduino:avr:uno
+    platforms:
+      - platform: arduino:avr (1.8.7)
+    libraries:
+      - dir: MQTTESP8266
+default_profile: LSSensor_Uno
