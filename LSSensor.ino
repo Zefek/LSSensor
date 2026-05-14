@@ -32,6 +32,7 @@ struct DiagData {
   uint16_t mqttFailCount;
   uint8_t  resetReason;
   uint16_t loopMaxMs;
+  int8_t   rssi;
 };
 #pragma pack(pop)
 
@@ -149,6 +150,7 @@ void loop() {
 
       currentDiagData.uptime = currentMillis / 60000UL;
       currentDiagData.freeRam = freeRam();
+      currentDiagData.rssi = espDrv.GetRssi();
       mqttClient.Publish(LSSENSOR_DIAG, (const uint8_t*)&currentDiagData, sizeof(DiagData), false);
       currentDiagData.loopMaxMs = 0;
       mqttClient.Disconnect();
