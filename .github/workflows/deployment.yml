@@ -1,12 +1,21 @@
 name: Deploy LS Sensor on Environment
 
 on:
-  deployment:
+  workflow_dispatch:
+    inputs:
+      environment:
+        required: true
+        type: choice
+        options:
+          - Home
+      serial_port:
+        required: true
+        type: string
 
 jobs:
   deployment:
     runs-on: [self-hosted, iot]
-    environment: Home
+    environment: ${{ inputs.environment }}
 
     steps:
 
@@ -65,14 +74,14 @@ jobs:
 
       - name: Compile Arduino project
         run: |
-          & "$Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe" --config-file config.yaml compile --profile LSSensor_Uno ./ --output-dir build
+          & "$Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe" --config-file config.yaml compile ./ --output-dir build
 
       - name: Upload firmware to Arduino
         env:
-          SERIAL_PORT: ${{ github.event.deployment.payload.serial_port }}
+          SERIAL_PORT: ${{ github.event.inputs.serial_port }}
         run: |
           if ($env:SERIAL_PORT -notmatch '^COM\d+$') {
             Write-Error "Invalid serial port format: $env:SERIAL_PORT"
             exit 1
           }
-          & "$Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe" --config-file config.yaml upload --profile LSSensor_Uno --port $env:SERIAL_PORT --input-dir build
+          & "$Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe" --config-file config.yaml upload --port $env:SERIAL_PORT --input-dir build
