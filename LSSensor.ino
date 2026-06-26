@@ -5,6 +5,9 @@
 #include "secret.h"
 #include <avr/wdt.h>
 
+#ifndef FW_VERSION
+#define FW_VERSION 0
+#endif
 #define LSSensorPIN1 2
 #define LSSensorPIN2 3
 #define SENDINTERVAL 5 * 60 * 1000 //5 minut
