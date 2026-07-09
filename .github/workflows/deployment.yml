@@ -14,43 +14,14 @@ on:
 
 permissions:
   contents: read
+  deployments: write
 
 jobs:
   deployment:
-    runs-on: [self-hosted, iot]
-    environment: ${{ inputs.environment }}
-    env:
-      REPO: ${{ vars.REPO }}
-
-    steps:
-
-      - name: Checkout repository
-        uses: actions/checkout@v7
-        with:
-          submodules: true
-
-      - name: Initialize Arduino CLI
-        run: |
-          & "$Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe" --config-file config.yaml core update-index
-
-      - uses: zefek/GithubActions/Actions/deployConfig@main
-        with:
-          repo:   ${{ env.REPO }}
-          auth:   ${{ secrets.REPO_TOKEN }}
-          dest:   ${{ runner.temp }}\secrets
-          device: LSSensor
-          outdir: ${{ env.GITHUB_WORKSPACE }}
-
-      - name: Compile Arduino project
-        run: |
-          & "$Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe" --config-file config.yaml compile ./ --output-dir build --build-property "compiler.cpp.extra_flags=-DFW_VERSION=${{ github.run_number }}"
-
-      - name: Upload firmware to Arduino
-        env:
-          SERIAL_PORT: ${{ github.event.inputs.serial_port }}
-        run: |
-          if ($env:SERIAL_PORT -notmatch '^COM\d+$') {
-            Write-Error "Invalid serial port format: $env:SERIAL_PORT"
-            exit 1
-          }
-          & "$Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe" --config-file config.yaml upload --port $env:SERIAL_PORT --input-dir build
+    uses: Zefek/GithubActions/.github/workflows/arduino-build-deploy.yml@main
+    with:
+      environment: ${{ inputs.environment }}
+      serial_port: ${{ inputs.serial_port }}
+      device_name: LSSensor
+      source_dir: "."
+    secrets: inherit
