@@ -14,77 +14,14 @@ on:
 
 permissions:
   contents: read
+  deployments: write
 
 jobs:
   deployment:
-    runs-on: [self-hosted, iot]
-    environment: ${{ inputs.environment }}
-
-    steps:
-
-      - name: Checkout repository
-        uses: actions/checkout@v7
-        with:
-          submodules: true
-
-      - name: Initialize Arduino CLI
-        run: |
-          & "$Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe" --config-file config.yaml core update-index
-
-      - name: Set configs (Windows)
-        shell: powershell
-        env:
-          SECRETS_SHARE_PATH: ${{ secrets.SECRETS_SHARE_PATH }}
-          SECRETS_SHARE_USER: ${{ secrets.SECRETS_SHARE_USER }}
-          SECRETS_SHARE_PASS: ${{ secrets.SECRETS_SHARE_PASS }}
-          SECRETS_REPO_NAME:  ${{ secrets.SECRETS_REPO_NAME }}
-          DEVICE_NAME:        LSSensor
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $secretsDir = Join-Path $env:RUNNER_TEMP 'secrets'
-          $mounted = $false
-
-          try {
-              # Mount SMB share with read-only credentials
-              & net.exe use 'Z:' $env:SECRETS_SHARE_PATH /user:$env:SECRETS_SHARE_USER $env:SECRETS_SHARE_PASS | Out-Null
-              if ($LASTEXITCODE -ne 0) { throw "Failed to mount SMB share (exit $LASTEXITCODE)" }
-              $mounted = $true
-
-              # Clone Configuration repo from the share
-              if (Test-Path $secretsDir) { Remove-Item $secretsDir -Recurse -Force }
-              $repoSource = if ($env:SECRETS_REPO_NAME) { "Z:\$env:SECRETS_REPO_NAME" } else { 'Z:\' }
-              git clone --depth=1 $repoSource $secretsDir
-              if ($LASTEXITCODE -ne 0) { throw "git clone failed (exit $LASTEXITCODE)" }
-
-              # Run per-device deploy script
-              $deployScript = Join-Path $secretsDir "$env:DEVICE_NAME\deploy.ps1"
-              if (-not (Test-Path $deployScript)) { throw "deploy.ps1 not found at $deployScript" }
-
-              & $deployScript -OutputDir $env:GITHUB_WORKSPACE
-              if ($LASTEXITCODE -ne 0) { throw "deploy.ps1 failed (exit $LASTEXITCODE)" }
-          }
-          finally {
-              # Always clean up - whether the try block succeeded, threw, or was interrupted
-              if (Test-Path $secretsDir) {
-                  Remove-Item $secretsDir -Recurse -Force -ErrorAction SilentlyContinue
-              }
-              if ($mounted) {
-                  & net.exe use 'Z:' /delete /yes | Out-Null
-              }
-              # cleanup is best-effort; do not fail the step on a stale exit code
-              $global:LASTEXITCODE = 0
-          }
-
-      - name: Compile Arduino project
-        run: |
-          & "$Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe" --config-file config.yaml compile ./ --output-dir build --build-property "compiler.cpp.extra_flags=-DFW_VERSION=${{ github.run_number }}"
-
-      - name: Upload firmware to Arduino
-        env:
-          SERIAL_PORT: ${{ github.event.inputs.serial_port }}
-        run: |
-          if ($env:SERIAL_PORT -notmatch '^COM\d+$') {
-            Write-Error "Invalid serial port format: $env:SERIAL_PORT"
-            exit 1
-          }
-          & "$Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe" --config-file config.yaml upload --port $env:SERIAL_PORT --input-dir build
+    uses: Zefek/GithubActions/.github/workflows/arduino-build-deploy.yml@v1
+    with:
+      environment: ${{ inputs.environment }}
+      serial_port: ${{ inputs.serial_port }}
+      device_name: LSSensor
+      source_dir: "."
+    secrets: inherit
