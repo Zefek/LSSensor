@@ -1,4 +1,4 @@
-name: Deploy LS Sensor on Environment
+name: Deploy Arduino LS Sensor on Environment
 
 on:
   workflow_dispatch:
@@ -23,5 +23,5 @@ jobs:
       environment: ${{ inputs.environment }}
       serial_port: ${{ inputs.serial_port }}
       device_name: LSSensor
-      source_dir: "."
+      source_dir: "./src/Arduino"
     secrets: inherit
