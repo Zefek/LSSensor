@@ -1,8 +1,11 @@
 profiles:
-  LSSensor_Uno:
-    fqbn: arduino:avr:uno
+  LSSensor_ESP32:
+    fqbn: esp32:esp32:esp32:PartitionScheme=default
     platforms:
-      - platform: arduino:avr (1.8.7)
+      - platform: esp32:esp32 (3.2.0)
+        platform_index_url: https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
     libraries:
-      - dir: MQTTESP8266
-default_profile: LSSensor_Uno
+      - PubSubClient (2.8.0)
+    port_config:
+      baudrate: 115200
+default_profile: LSSensor_ESP32
