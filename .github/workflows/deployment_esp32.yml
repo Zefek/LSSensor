@@ -36,8 +36,8 @@ jobs:
           repo:   ${{ env.REPO }} 
           auth:   ${{ secrets.REPO_TOKEN }}
           dest:   ${{ runner.temp }}\secrets
-          device: LSSensor
-          outdir: ${{ github.workspace }}\src
+          device: LSSensorESP32
+          outdir: ${{ github.workspace }}\src\ESP32
 
       - name: Compile Arduino project
         run: |

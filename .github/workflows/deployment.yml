@@ -22,6 +22,6 @@ jobs:
     with:
       environment: ${{ inputs.environment }}
       serial_port: ${{ inputs.serial_port }}
-      device_name: LSSensor
+      device_name: LSSensorArduino
       source_dir: "./src/Arduino"
     secrets: inherit
