@@ -1,169 +1,252 @@
-#include <EspDrv.h>
-#include <MQTTClient.h>
-#include <SoftwareSerial.h>
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <PubSubClient.h>
+#include "time.h"
+#include "esp_task_wdt.h"
 #include "config.h"
 #include "secret.h"
-#include <avr/wdt.h>
+#include "ota.h"
 
 #ifndef FW_VERSION
 #define FW_VERSION 0
 #endif
-#define LSSensorPIN1 2
-#define LSSensorPIN2 3
-#define SENDINTERVAL 5 * 60 * 1000 //5 minut
+#define LSSensorPIN1 32
+#define LSSensorPIN2 33
+#define PIN_PULL INPUT
+#define PIN_EDGE RISING
+#define PULSE_DEBOUNCE_MS 84
+#define PIN_DIAG 1
+#define PIN_DIAG_INTERVAL_MS 500UL
+#define PULSE_INTERVAL 60000UL
+#define DIAG_INTERVAL 300000UL
+#define WDT_TIMEOUT_S 90
+#define WIFI_CONNECT_TIMEOUT_MS 15000UL
+#define TIME_SYNC_TIMEOUT_MS 15000UL
+#define MQTT_TLS_PORT 8883
+#define TIME_VALID_THRESHOLD 1700000000UL
 
-void MQTTMessageReceive(char* topic, uint8_t* payload, uint16_t length) { }
-void OnBusy(uint8_t count);
-void DataTimeout();
-MQTTConnectData mqttConnectData = { MQTTHost, 1883, "WattMeter", MQTTUsername, MQTTPassword, "", 0, false, "", false, 0x0F }; 
+WiFiClientSecure net;
+PubSubClient mqtt(net);
 
-SoftwareSerial serial(4, 5);
-EspDrv espDrv(&serial);
-MQTTClient mqttClient(&espDrv, MQTTMessageReceive);
+volatile uint32_t counter1 = 0;
+volatile uint32_t counter2 = 0;
+volatile uint32_t lastTime1 = 0;
+volatile uint32_t lastTime2 = 0;
+portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
+
 char data[32];
-int wattMetter1Counter = 0;
-int wattMetter2Counter = 0;
-unsigned long lastSendToMQTT = 0;
-unsigned long lastTime = 0;
-bool closeRequired = false;
+unsigned long lastPulseSend = 0;
+unsigned long lastDiagSend = 0;
+unsigned long lastPinDiag = 0;
+bool initialZeroSent = false;
+bool timeSynced = false;
 
 #pragma pack(push, 1)
 struct DiagData {
   uint32_t uptime;
-  uint16_t freeRam;
+  uint16_t freeRamKb;
   uint16_t wifiReconn;
   uint16_t mqttFailCount;
   uint8_t  resetReason;
   uint16_t loopMaxMs;
   int8_t   rssi;
+  uint16_t fwVersion;
+  uint16_t otaFailCount;
 };
 #pragma pack(pop)
+static_assert(sizeof(DiagData) == 18, "DiagData wire layout must stay 18 bytes");
 
 DiagData currentDiagData;
+uint16_t otaFailures = 0;
 
-extern int __heap_start, *__brkval;
-int freeRam() {
-  int v;
-  return (int)&v - (__brkval == 0 ? (int)&__heap_start : (int)__brkval);
+uint16_t heapKb()
+{
+  return (uint16_t)(ESP.getFreeHeap() / 1024);
 }
 
-void WattMetter1Received()
+void IRAM_ATTR WattMeter1Received()
 {
-  unsigned long time = millis();
-  if(time - lastTime > 84)
+  uint32_t t = millis();
+  portENTER_CRITICAL_ISR(&mux);
+  if(t - lastTime1 > PULSE_DEBOUNCE_MS)
   {
-    wattMetter1Counter++;
-    lastTime = time;
+    counter1++;
+    lastTime1 = t;
   }
+  portEXIT_CRITICAL_ISR(&mux);
 }
 
-unsigned long lastTime2 = 0;
-void WattMetter2Received()
+void IRAM_ATTR WattMeter2Received()
 {
-  unsigned long time = millis();
-  if(time - lastTime2 > 84)
+  uint32_t t = millis();
+  portENTER_CRITICAL_ISR(&mux);
+  if(t - lastTime2 > PULSE_DEBOUNCE_MS)
   {
-    wattMetter2Counter++;
-    lastTime2 = time;
+    counter2++;
+    lastTime2 = t;
   }
+  portEXIT_CRITICAL_ISR(&mux);
+}
+
+bool SyncTime()
+{
+  configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+  unsigned long start = millis();
+  time_t now = time(nullptr);
+  while(now < TIME_VALID_THRESHOLD && millis() - start < TIME_SYNC_TIMEOUT_MS)
+  {
+    esp_task_wdt_reset();
+    delay(200);
+    now = time(nullptr);
+  }
+  return now >= TIME_VALID_THRESHOLD;
 }
 
 bool Connect()
 {
-  int wifiStatus = espDrv.GetConnectionStatus();
-  bool wifiConnected = wifiStatus == WL_CONNECTED;
-  if(wifiStatus == WL_DISCONNECTED || wifiStatus == WL_IDLE_STATUS)
+  if(WiFi.status() != WL_CONNECTED)
   {
-    wifiConnected = espDrv.Connect(WifiSSID, WifiPassword);
-    if(currentDiagData.wifiReconn < 65535) 
+    if(currentDiagData.wifiReconn < 65535)
     {
       currentDiagData.wifiReconn++;
     }
-  }
-  if(wifiConnected)
-  {
-
-    bool isConnected = mqttClient.IsConnected();
-    if(!isConnected)
+    WiFi.begin(WifiSSID, WifiPassword);
+    unsigned long start = millis();
+    while(WiFi.status() != WL_CONNECTED && millis() - start < WIFI_CONNECT_TIMEOUT_MS)
     {
-      bool ok = mqttClient.Connect(mqttConnectData);
-      if(!ok && currentDiagData.mqttFailCount < 65535) currentDiagData.mqttFailCount++;
-      return ok;
-    }
-    else
-    {
-      return true;
+      esp_task_wdt_reset();
+      delay(100);
     }
   }
-  return false;
+  if(WiFi.status() != WL_CONNECTED)
+  {
+    return false;
+  }
+  if(!timeSynced)
+  {
+    timeSynced = SyncTime();
+    if(!timeSynced)
+    {
+      return false;
+    }
+  }
+  if(!mqtt.connected())
+  {
+    bool ok = mqtt.connect("WattMeter", MQTTUsername, MQTTPassword);
+    if(!ok && currentDiagData.mqttFailCount < 65535)
+    {
+      currentDiagData.mqttFailCount++;
+    }
+    return ok;
+  }
+  return true;
 }
 
-void DataTimeout()
+#if PIN_DIAG
+void probePin(uint8_t pin, const char* name)
 {
-  closeRequired = true;
+  pinMode(pin, INPUT_PULLUP);
+  delay(20);
+  int up = digitalRead(pin);
+  pinMode(pin, INPUT_PULLDOWN);
+  delay(20);
+  int down = digitalRead(pin);
+  Serial.printf("%s (GPIO%u): PULLUP=%d PULLDOWN=%d\n", name, pin, up, down);
 }
-void OnBusy(uint8_t count)
-{
-  if(count > 10)
-  {
-    closeRequired = true;
-  }
-}
+#endif
 
 void setup() {
-  currentDiagData.resetReason = MCUSR;
-  MCUSR = 0;
-  // put your setup code here, to run once:
-  pinMode(LSSensorPIN1, INPUT);
-  pinMode(LSSensorPIN2, INPUT);
-  Serial.begin(57600);
-  serial.begin(57600);
-  espDrv.Init(16);
-  espDrv.OnBusy = OnBusy;
-  espDrv.DataTimeout = DataTimeout;
-  espDrv.Connect(WifiSSID, WifiPassword);
-  attachInterrupt(digitalPinToInterrupt(LSSensorPIN1), WattMetter1Received, RISING);
-  attachInterrupt(digitalPinToInterrupt(LSSensorPIN2), WattMetter2Received, RISING);
+  currentDiagData.resetReason = (uint8_t)esp_reset_reason();
+  Serial.begin(115200);
+#if PIN_DIAG
+  delay(300);
+  Serial.println("PIN DIAG (klidova uroven):");
+  probePin(LSSensorPIN1, "PIN1");
+  probePin(LSSensorPIN2, "PIN2");
+#endif
+  pinMode(LSSensorPIN1, PIN_PULL);
+  pinMode(LSSensorPIN2, PIN_PULL);
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WifiSSID, WifiPassword);
+  net.setCACert(MQTTCACert);
+  mqtt.setServer(MQTTHost, MQTT_TLS_PORT);
+  mqtt.setBufferSize(256);
+  mqtt.setKeepAlive(60);
+  attachInterrupt(digitalPinToInterrupt(LSSensorPIN1), WattMeter1Received, PIN_EDGE);
+  attachInterrupt(digitalPinToInterrupt(LSSensorPIN2), WattMeter2Received, PIN_EDGE);
+  esp_task_wdt_config_t wdtConfig = {
+    .timeout_ms = WDT_TIMEOUT_S * 1000,
+    .idle_core_mask = 0,
+    .trigger_panic = true
+  };
+  esp_task_wdt_reconfigure(&wdtConfig);
+  esp_task_wdt_add(NULL);
   Serial.println("Setup OK");
-  wdt_enable(WDTO_8S);
 }
 
 void loop() {
   unsigned long currentMillis = millis();
-  wdt_reset();
-  if(closeRequired)
-  {
-    espDrv.Close();
-    closeRequired = false;
-  }
-  mqttClient.Loop();
-  if(currentMillis - lastSendToMQTT >= 300000)
-  {    
-    detachInterrupt(digitalPinToInterrupt(LSSensorPIN1));
-    detachInterrupt(digitalPinToInterrupt(LSSensorPIN2));
-    if(Connect())
-    {
-      sprintf(data, "{\"V\":%d,\"S\":%d}", 0, 0);
-      mqttClient.Publish(ELCONSUMPTION, data);
-      sprintf(data, "{\"V\":%d,\"S\":%d}", wattMetter1Counter, wattMetter2Counter);
-      mqttClient.Publish(ELCONSUMPTION, data);
-      
-      wattMetter1Counter = 0;
-      wattMetter2Counter = 0;
+  esp_task_wdt_reset();
+  mqtt.loop();
 
-      currentDiagData.uptime = currentMillis / 60000UL;
-      currentDiagData.freeRam = freeRam();
-      currentDiagData.rssi = espDrv.GetRssi();
-      mqttClient.Publish(LSSENSOR_DIAG, (const uint8_t*)&currentDiagData, sizeof(DiagData), false);
-      currentDiagData.loopMaxMs = 0;
-      mqttClient.Disconnect();
-    }
-    lastSendToMQTT = currentMillis;
-    attachInterrupt(digitalPinToInterrupt(LSSensorPIN1), WattMetter1Received, RISING);
-    attachInterrupt(digitalPinToInterrupt(LSSensorPIN2), WattMetter2Received, RISING);
+#if PIN_DIAG
+  if(currentMillis - lastPinDiag >= PIN_DIAG_INTERVAL_MS)
+  {
+    lastPinDiag = currentMillis;
+    Serial.printf("P1=%d c1=%lu  P2=%d c2=%lu\n",
+                  digitalRead(LSSensorPIN1), (unsigned long)counter1,
+                  digitalRead(LSSensorPIN2), (unsigned long)counter2);
   }
+#endif
+
+  bool pulseDue = !initialZeroSent || currentMillis - lastPulseSend >= PULSE_INTERVAL;
+  bool diagDue = currentMillis - lastDiagSend >= DIAG_INTERVAL;
+
+  if(pulseDue || diagDue)
+  {
+    portENTER_CRITICAL(&mux);
+    uint32_t c1 = counter1;
+    uint32_t c2 = counter2;
+    portEXIT_CRITICAL(&mux);
+
+    bool connected = Connect();
+
+    if(pulseDue)
+    {
+      if(connected)
+      {
+        if(!initialZeroSent)
+        {
+          sprintf(data, "{\"V\":%lu,\"S\":%lu}", 0UL, 0UL);
+          mqtt.publish(ELCONSUMPTION, data);
+          initialZeroSent = true;
+        }
+        sprintf(data, "{\"V\":%lu,\"S\":%lu}", (unsigned long)c1, (unsigned long)c2);
+        mqtt.publish(ELCONSUMPTION, data);
+      }
+      lastPulseSend = currentMillis;
+    }
+
+    if(diagDue)
+    {
+      if(connected)
+      {
+        currentDiagData.uptime = currentMillis / 60000UL;
+        currentDiagData.freeRamKb = heapKb();
+        currentDiagData.rssi = (int8_t)WiFi.RSSI();
+        currentDiagData.fwVersion = (uint16_t)FW_VERSION;
+        currentDiagData.otaFailCount = otaFailures;
+        mqtt.publish(LSSENSOR_DIAG, (const uint8_t*)&currentDiagData, sizeof(DiagData), false);
+        currentDiagData.loopMaxMs = 0;
+      }
+      lastDiagSend = currentMillis;
+    }
+  }
+
+  otaLoop();
+
   unsigned long iterDur = millis() - currentMillis;
-  if(iterDur > currentDiagData.loopMaxMs) 
+  if(iterDur > currentDiagData.loopMaxMs)
   {
     currentDiagData.loopMaxMs = (iterDur > 65535UL) ? 65535 : (uint16_t)iterDur;
   }
