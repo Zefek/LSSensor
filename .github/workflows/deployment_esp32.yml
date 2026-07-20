@@ -31,7 +31,7 @@ jobs:
           & "$Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe" --config-file config.yaml core update-index
       
       
-      - uses: zefek/GithubActions/Actions/deployConfig@v1
+      - uses: zefek/GithubActions/Actions/deployConfig@c2872a07ea6ff49f3105cf3b8faef0e7169236c7
         with:
           repo:   ${{ env.REPO }} 
           auth:   ${{ secrets.REPO_TOKEN }}
