@@ -1,4 +1,4 @@
-name: Deploy LS Sensor on Environment
+name: Deploy Arduino LS Sensor on Environment
 
 on:
   workflow_dispatch:
@@ -18,10 +18,10 @@ permissions:
 
 jobs:
   deployment:
-    uses: Zefek/GithubActions/.github/workflows/arduino-build-deploy.yml@v1
+    uses: Zefek/GithubActions/.github/workflows/arduino-build-deploy.yml@c2872a07ea6ff49f3105cf3b8faef0e7169236c7
     with:
       environment: ${{ inputs.environment }}
       serial_port: ${{ inputs.serial_port }}
-      device_name: LSSensor
-      source_dir: "."
+      device_name: LSSensorArduino
+      source_dir: "./src/Arduino"
     secrets: inherit

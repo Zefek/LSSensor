@@ -1,0 +1,98 @@
+name: Deploy LS Sensor ESP32 on Environment
+
+on:
+  workflow_dispatch:
+    inputs:
+      serial_port:
+        required: false
+        type: string
+      environment:
+        required: true
+        type: choice
+        options:
+          - Home
+
+permissions:
+  contents: read
+
+jobs:
+  deployment:
+    runs-on: [self-hosted, iot]
+    environment: ${{ inputs.environment }}
+    env:
+      REPO: ${{ vars.REPO }}
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install required board core
+        run: |
+          & "$Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe" --config-file config.yaml core update-index
+      
+      
+      - uses: zefek/GithubActions/Actions/deployConfig@c2872a07ea6ff49f3105cf3b8faef0e7169236c7
+        with:
+          repo:   ${{ env.REPO }} 
+          auth:   ${{ secrets.REPO_TOKEN }}
+          dest:   ${{ runner.temp }}\secrets
+          device: LSSensorESP32
+          outdir: ${{ github.workspace }}\src\ESP32
+
+      - name: Compile Arduino project
+        run: |
+          & "$Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe" --config-file config.yaml compile ./src/ESP32 --output-dir build --build-property "compiler.cpp.extra_flags=-DFW_VERSION=${{ github.run_number }}"
+
+      - name: Upload firmware to Arduino
+        if: ${{ github.event.inputs.serial_port != '' }}
+        run: |
+          $port = "${{ github.event.inputs.serial_port }}"
+          & "$Env:RUNNER_TOOL_CACHE\arduino-cli\arduino-cli.exe" --config-file config.yaml upload ./src/ESP32 --port $port --input-dir build
+
+      - name: Uložení firmware
+        if: ${{ github.event.inputs.serial_port == '' }}
+        shell: powershell
+        env:
+          FIRMWARE_TARGET_PATH: ${{ vars.FIRMWARE_TARGET_PATH }}
+          FW_VERSION:  ${{ github.run_number }}
+          GIT_SHA:     ${{ github.sha }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $env:FIRMWARE_TARGET_PATH) { throw "FIRMWARE_TARGET_PATH variable is not set" }
+
+          $buildDir = Join-Path $env:GITHUB_WORKSPACE 'build'
+          $version  = $env:FW_VERSION
+
+          # Aplikační image pro OTA (ESP32 nahrává *.ino.bin, ne bootloader/partitions)
+          $appBin = Get-ChildItem -Path $buildDir -Filter '*.ino.bin' -File | Select-Object -First 1
+          if (-not $appBin) { throw "Application firmware (*.ino.bin) not found in $buildDir" }
+
+          # 1) Historie: celý build do podadresáře pojmenovaného verzí
+          $versionDir = Join-Path $env:FIRMWARE_TARGET_PATH $version
+          New-Item -ItemType Directory -Path $versionDir -Force | Out-Null
+          Copy-Item -Path "$buildDir\*" -Destination $versionDir -Recurse -Force
+
+          # 2) OTA: pevná cesta na poslední firmware + manifest
+          if (-not (Test-Path $env:FIRMWARE_TARGET_PATH)) {
+            New-Item -ItemType Directory -Path $env:FIRMWARE_TARGET_PATH -Force | Out-Null
+          }
+          $latestBin = Join-Path $env:FIRMWARE_TARGET_PATH 'firmware.bin'
+          Copy-Item -Path $appBin.FullName -Destination $latestBin -Force
+
+          $hash = (Get-FileHash -Path $latestBin -Algorithm SHA256).Hash.ToLower()
+          $size = (Get-Item $latestBin).Length
+
+          # Jednoduchý key=value manifest – ESP32 ho rozparsuje bez JSON knihovny
+          $manifest = @(
+            "version=$version"
+            "file=firmware.bin"
+            "size=$size"
+            "sha256=$hash"
+            "commit=$($env:GIT_SHA)"
+          )
+          $manifestPath = Join-Path $env:FIRMWARE_TARGET_PATH 'manifest.txt'
+          # LF konce řádků a bez BOM – snazší parsování na zařízení
+          [System.IO.File]::WriteAllText($manifestPath, ($manifest -join "`n") + "`n")
+
+          Write-Host "Firmware verze $version uložen do $versionDir; OTA: $latestBin (manifest $manifestPath)"
+
