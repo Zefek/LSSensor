@@ -26,6 +26,7 @@ int wattMetter2Counter = 0;
 unsigned long lastSendToMQTT = 0;
 unsigned long lastTime = 0;
 bool closeRequired = false;
+bool initialZeroSent = false;
 
 #pragma pack(push, 1)
 struct DiagData {
@@ -143,8 +144,12 @@ void loop() {
     detachInterrupt(digitalPinToInterrupt(LSSensorPIN2));
     if(Connect())
     {
-      sprintf(data, "{\"V\":%d,\"S\":%d}", 0, 0);
-      mqttClient.Publish(ELCONSUMPTION, data);
+      if(!initialZeroSent)
+      {
+        sprintf(data, "{\"V\":%d,\"S\":%d}", 0, 0);
+        mqttClient.Publish(ELCONSUMPTION, data);
+        initialZeroSent = true;
+      }
       sprintf(data, "{\"V\":%d,\"S\":%d}", wattMetter1Counter, wattMetter2Counter);
       mqttClient.Publish(ELCONSUMPTION, data);
       
@@ -156,7 +161,6 @@ void loop() {
       currentDiagData.rssi = espDrv.GetRssi();
       mqttClient.Publish(LSSENSOR_DIAG, (const uint8_t*)&currentDiagData, sizeof(DiagData), false);
       currentDiagData.loopMaxMs = 0;
-      mqttClient.Disconnect();
     }
     lastSendToMQTT = currentMillis;
     attachInterrupt(digitalPinToInterrupt(LSSensorPIN1), WattMetter1Received, RISING);

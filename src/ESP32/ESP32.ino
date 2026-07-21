@@ -15,7 +15,6 @@
 #define PIN_PULL INPUT
 #define PIN_EDGE RISING
 #define PULSE_DEBOUNCE_MS 84
-#define PIN_DIAG 1
 #define PIN_DIAG_INTERVAL_MS 500UL
 #define PULSE_INTERVAL 60000UL
 #define DIAG_INTERVAL 300000UL
@@ -142,28 +141,9 @@ bool Connect()
   return true;
 }
 
-#if PIN_DIAG
-void probePin(uint8_t pin, const char* name)
-{
-  pinMode(pin, INPUT_PULLUP);
-  delay(20);
-  int up = digitalRead(pin);
-  pinMode(pin, INPUT_PULLDOWN);
-  delay(20);
-  int down = digitalRead(pin);
-  Serial.printf("%s (GPIO%u): PULLUP=%d PULLDOWN=%d\n", name, pin, up, down);
-}
-#endif
-
 void setup() {
   currentDiagData.resetReason = (uint8_t)esp_reset_reason();
   Serial.begin(115200);
-#if PIN_DIAG
-  delay(300);
-  Serial.println("PIN DIAG (klidova uroven):");
-  probePin(LSSensorPIN1, "PIN1");
-  probePin(LSSensorPIN2, "PIN2");
-#endif
   pinMode(LSSensorPIN1, PIN_PULL);
   pinMode(LSSensorPIN2, PIN_PULL);
   WiFi.mode(WIFI_STA);
@@ -188,16 +168,6 @@ void loop() {
   unsigned long currentMillis = millis();
   esp_task_wdt_reset();
   mqtt.loop();
-
-#if PIN_DIAG
-  if(currentMillis - lastPinDiag >= PIN_DIAG_INTERVAL_MS)
-  {
-    lastPinDiag = currentMillis;
-    Serial.printf("P1=%d c1=%lu  P2=%d c2=%lu\n",
-                  digitalRead(LSSensorPIN1), (unsigned long)counter1,
-                  digitalRead(LSSensorPIN2), (unsigned long)counter2);
-  }
-#endif
 
   bool pulseDue = !initialZeroSent || currentMillis - lastPulseSend >= PULSE_INTERVAL;
   bool diagDue = currentMillis - lastDiagSend >= DIAG_INTERVAL;
