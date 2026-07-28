@@ -12,9 +12,13 @@
 #endif
 #define LSSensorPIN1 32
 #define LSSensorPIN2 33
-#define PIN_PULL INPUT
-#define PIN_EDGE RISING
-#define PULSE_DEBOUNCE_MS 84
+#define SAMPLE_INTERVAL_MS 1
+#define ADC_TH_LOW_MV 1000
+#define ADC_TH_HIGH_MV 1800
+#define PULSE_MIN_INTERVAL_MS 30
+#define SAMPLER_CORE 1
+#define SAMPLER_PRIORITY 2
+#define SAMPLER_STACK 2048
 #define PIN_DIAG_INTERVAL_MS 500UL
 #define PULSE_INTERVAL 60000UL
 #define DIAG_INTERVAL 300000UL
@@ -29,9 +33,12 @@ PubSubClient mqtt(net);
 
 volatile uint32_t counter1 = 0;
 volatile uint32_t counter2 = 0;
-volatile uint32_t lastTime1 = 0;
-volatile uint32_t lastTime2 = 0;
 portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
+
+bool chHigh1 = false;
+bool chHigh2 = false;
+uint32_t chLastCount1 = 0;
+uint32_t chLastCount2 = 0;
 
 char data[32];
 unsigned long lastPulseSend = 0;
@@ -63,28 +70,42 @@ uint16_t heapKb()
   return (uint16_t)(ESP.getFreeHeap() / 1024);
 }
 
-void IRAM_ATTR WattMeter1Received()
+void ProcessSample(int mv, bool* high, uint32_t* lastCount, volatile uint32_t* counter, uint32_t now)
 {
-  uint32_t t = millis();
-  portENTER_CRITICAL_ISR(&mux);
-  if(t - lastTime1 > PULSE_DEBOUNCE_MS)
+  if(*high)
   {
-    counter1++;
-    lastTime1 = t;
+    if(mv < ADC_TH_LOW_MV)
+    {
+      *high = false;
+    }
   }
-  portEXIT_CRITICAL_ISR(&mux);
+  else if(mv > ADC_TH_HIGH_MV)
+  {
+    *high = true;
+    if(now - *lastCount > PULSE_MIN_INTERVAL_MS)
+    {
+      portENTER_CRITICAL(&mux);
+      (*counter)++;
+      portEXIT_CRITICAL(&mux);
+      *lastCount = now;
+    }
+  }
 }
 
-void IRAM_ATTR WattMeter2Received()
+void SamplerTask(void* arg)
 {
-  uint32_t t = millis();
-  portENTER_CRITICAL_ISR(&mux);
-  if(t - lastTime2 > PULSE_DEBOUNCE_MS)
+  TickType_t last = xTaskGetTickCount();
+  chHigh1 = analogReadMilliVolts(LSSensorPIN1) > ADC_TH_HIGH_MV;
+  chHigh2 = analogReadMilliVolts(LSSensorPIN2) > ADC_TH_HIGH_MV;
+  for(;;)
   {
-    counter2++;
-    lastTime2 = t;
+    uint32_t now = millis();
+    int mv1 = analogReadMilliVolts(LSSensorPIN1);
+    int mv2 = analogReadMilliVolts(LSSensorPIN2);
+    ProcessSample(mv1, &chHigh1, &chLastCount1, &counter1, now);
+    ProcessSample(mv2, &chHigh2, &chLastCount2, &counter2, now);
+    vTaskDelayUntil(&last, pdMS_TO_TICKS(SAMPLE_INTERVAL_MS));
   }
-  portEXIT_CRITICAL_ISR(&mux);
 }
 
 bool SyncTime()
@@ -144,16 +165,15 @@ bool Connect()
 void setup() {
   currentDiagData.resetReason = (uint8_t)esp_reset_reason();
   Serial.begin(115200);
-  pinMode(LSSensorPIN1, PIN_PULL);
-  pinMode(LSSensorPIN2, PIN_PULL);
+  analogReadResolution(12);
+  analogSetAttenuation(ADC_11db);
   WiFi.mode(WIFI_STA);
   WiFi.begin(WifiSSID, WifiPassword);
   net.setCACert(MQTTCACert);
   mqtt.setServer(MQTTHost, MQTT_TLS_PORT);
   mqtt.setBufferSize(256);
   mqtt.setKeepAlive(60);
-  attachInterrupt(digitalPinToInterrupt(LSSensorPIN1), WattMeter1Received, PIN_EDGE);
-  attachInterrupt(digitalPinToInterrupt(LSSensorPIN2), WattMeter2Received, PIN_EDGE);
+  xTaskCreatePinnedToCore(SamplerTask, "sampler", SAMPLER_STACK, NULL, SAMPLER_PRIORITY, NULL, SAMPLER_CORE);
   esp_task_wdt_config_t wdtConfig = {
     .timeout_ms = WDT_TIMEOUT_S * 1000,
     .idle_core_mask = 0,
