@@ -43,7 +43,6 @@ uint32_t chLastCount1 = 0;
 uint32_t chLastCount2 = 0;
 
 uint32_t samplerMaxUs = 0;
-uint32_t samplerAvgUs = 0;
 uint32_t samplerOverruns = 0;
 uint16_t samplerStackWords = 0;
 
@@ -110,6 +109,8 @@ void SamplerTask(void* arg)
   uint32_t iterCount = 0;
   uint32_t durSum = 0;
   uint32_t durMax = 0;
+  uint32_t allTimeMaxUs = 0;
+  uint32_t overrunCount = 0;
   for(;;)
   {
     int64_t start = esp_timer_get_time();
@@ -125,22 +126,27 @@ void SamplerTask(void* arg)
     {
       durMax = dur;
     }
-    if(dur > samplerMaxUs)
+    if(dur > allTimeMaxUs)
     {
-      samplerMaxUs = dur;
+      allTimeMaxUs = dur;
     }
     if(dur > SAMPLE_INTERVAL_MS * 1000UL)
     {
-      samplerOverruns++;
+      overrunCount++;
       Serial.printf("SAMPLER overrun: %lu us\n", (unsigned long)dur);
     }
 
     if(++iterCount >= SAMPLER_REPORT_ITERS)
     {
-      samplerStackWords = uxTaskGetStackHighWaterMark(NULL);
-      samplerAvgUs = durSum / iterCount;
+      uint16_t hwm = (uint16_t)uxTaskGetStackHighWaterMark(NULL);
+      uint32_t avg = durSum / iterCount;
+      portENTER_CRITICAL(&mux);
+      samplerMaxUs = allTimeMaxUs;
+      samplerStackWords = hwm;
+      samplerOverruns = overrunCount;
+      portEXIT_CRITICAL(&mux);
       Serial.printf("SAMPLER avg=%lu us max=%lu us stackHWM=%u words overruns=%lu\n",
-        (unsigned long)samplerAvgUs, (unsigned long)durMax, samplerStackWords, (unsigned long)samplerOverruns);
+        (unsigned long)avg, (unsigned long)durMax, hwm, (unsigned long)overrunCount);
       iterCount = 0;
       durSum = 0;
       durMax = 0;
@@ -239,6 +245,9 @@ void loop() {
     portENTER_CRITICAL(&mux);
     uint32_t c1 = counter1;
     uint32_t c2 = counter2;
+    uint32_t sMaxUs = samplerMaxUs;
+    uint16_t sStackWords = samplerStackWords;
+    uint32_t sOverruns = samplerOverruns;
     portEXIT_CRITICAL(&mux);
 
     bool connected = Connect();
@@ -268,9 +277,9 @@ void loop() {
         currentDiagData.rssi = (int8_t)WiFi.RSSI();
         currentDiagData.fwVersion = (uint16_t)FW_VERSION;
         currentDiagData.otaFailCount = otaFailures;
-        currentDiagData.samplerMaxUs = (samplerMaxUs > 65535UL) ? 65535 : (uint16_t)samplerMaxUs;
-        currentDiagData.samplerStackWords = samplerStackWords;
-        currentDiagData.samplerOverruns = (samplerOverruns > 65535UL) ? 65535 : (uint16_t)samplerOverruns;
+        currentDiagData.samplerMaxUs = (sMaxUs > 65535UL) ? 65535 : (uint16_t)sMaxUs;
+        currentDiagData.samplerStackWords = sStackWords;
+        currentDiagData.samplerOverruns = (sOverruns > 65535UL) ? 65535 : (uint16_t)sOverruns;
         mqtt.publish(LSSENSOR_DIAG, (const uint8_t*)&currentDiagData, sizeof(DiagData), false);
         currentDiagData.loopMaxMs = 0;
       }
