@@ -3,6 +3,7 @@
 #include <PubSubClient.h>
 #include "time.h"
 #include "esp_task_wdt.h"
+#include "esp_timer.h"
 #include "config.h"
 #include "secret.h"
 #include "ota.h"
@@ -12,13 +13,14 @@
 #endif
 #define LSSensorPIN1 32
 #define LSSensorPIN2 33
-#define SAMPLE_INTERVAL_MS 1
+#define SAMPLE_INTERVAL_MS 5
 #define ADC_TH_LOW_MV 1000
 #define ADC_TH_HIGH_MV 1800
 #define PULSE_MIN_INTERVAL_MS 30
 #define SAMPLER_CORE 1
 #define SAMPLER_PRIORITY 2
-#define SAMPLER_STACK 2048
+#define SAMPLER_STACK 4096
+#define SAMPLER_REPORT_ITERS 2000
 #define PIN_DIAG_INTERVAL_MS 500UL
 #define PULSE_INTERVAL 60000UL
 #define DIAG_INTERVAL 300000UL
@@ -40,6 +42,11 @@ bool chHigh2 = false;
 uint32_t chLastCount1 = 0;
 uint32_t chLastCount2 = 0;
 
+uint32_t samplerMaxUs = 0;
+uint32_t samplerAvgUs = 0;
+uint32_t samplerOverruns = 0;
+uint16_t samplerStackWords = 0;
+
 char data[32];
 unsigned long lastPulseSend = 0;
 unsigned long lastDiagSend = 0;
@@ -58,9 +65,12 @@ struct DiagData {
   int8_t   rssi;
   uint16_t fwVersion;
   uint16_t otaFailCount;
+  uint16_t samplerMaxUs;
+  uint16_t samplerStackWords;
+  uint16_t samplerOverruns;
 };
 #pragma pack(pop)
-static_assert(sizeof(DiagData) == 18, "DiagData wire layout must stay 18 bytes");
+static_assert(sizeof(DiagData) == 24, "DiagData wire layout must stay 24 bytes");
 
 DiagData currentDiagData;
 uint16_t otaFailures = 0;
@@ -97,13 +107,45 @@ void SamplerTask(void* arg)
   TickType_t last = xTaskGetTickCount();
   chHigh1 = analogReadMilliVolts(LSSensorPIN1) > ADC_TH_HIGH_MV;
   chHigh2 = analogReadMilliVolts(LSSensorPIN2) > ADC_TH_HIGH_MV;
+  uint32_t iterCount = 0;
+  uint32_t durSum = 0;
+  uint32_t durMax = 0;
   for(;;)
   {
+    int64_t start = esp_timer_get_time();
     uint32_t now = millis();
     int mv1 = analogReadMilliVolts(LSSensorPIN1);
     int mv2 = analogReadMilliVolts(LSSensorPIN2);
     ProcessSample(mv1, &chHigh1, &chLastCount1, &counter1, now);
     ProcessSample(mv2, &chHigh2, &chLastCount2, &counter2, now);
+    uint32_t dur = (uint32_t)(esp_timer_get_time() - start);
+
+    durSum += dur;
+    if(dur > durMax)
+    {
+      durMax = dur;
+    }
+    if(dur > samplerMaxUs)
+    {
+      samplerMaxUs = dur;
+    }
+    if(dur > SAMPLE_INTERVAL_MS * 1000UL)
+    {
+      samplerOverruns++;
+      Serial.printf("SAMPLER overrun: %lu us\n", (unsigned long)dur);
+    }
+
+    if(++iterCount >= SAMPLER_REPORT_ITERS)
+    {
+      samplerStackWords = uxTaskGetStackHighWaterMark(NULL);
+      samplerAvgUs = durSum / iterCount;
+      Serial.printf("SAMPLER avg=%lu us max=%lu us stackHWM=%u words overruns=%lu\n",
+        (unsigned long)samplerAvgUs, (unsigned long)durMax, samplerStackWords, (unsigned long)samplerOverruns);
+      iterCount = 0;
+      durSum = 0;
+      durMax = 0;
+    }
+
     vTaskDelayUntil(&last, pdMS_TO_TICKS(SAMPLE_INTERVAL_MS));
   }
 }
@@ -226,6 +268,9 @@ void loop() {
         currentDiagData.rssi = (int8_t)WiFi.RSSI();
         currentDiagData.fwVersion = (uint16_t)FW_VERSION;
         currentDiagData.otaFailCount = otaFailures;
+        currentDiagData.samplerMaxUs = (samplerMaxUs > 65535UL) ? 65535 : (uint16_t)samplerMaxUs;
+        currentDiagData.samplerStackWords = samplerStackWords;
+        currentDiagData.samplerOverruns = (samplerOverruns > 65535UL) ? 65535 : (uint16_t)samplerOverruns;
         mqtt.publish(LSSENSOR_DIAG, (const uint8_t*)&currentDiagData, sizeof(DiagData), false);
         currentDiagData.loopMaxMs = 0;
       }
