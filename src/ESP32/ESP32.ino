@@ -232,8 +232,8 @@ void setup() {
   Serial.begin(115200);
   analogReadResolution(12);
   analogSetAttenuation(ADC_11db);
-  esp_sntp_servermode_dhcp(true);
   WiFi.mode(WIFI_STA);
+  esp_sntp_servermode_dhcp(true);
   WiFi.begin(WifiSSID, WifiPassword);
   net.setCACert(MQTTCACert);
   mqtt.setServer(MQTTHost, MQTT_TLS_PORT);
