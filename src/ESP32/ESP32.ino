@@ -2,6 +2,7 @@
 #include <WiFiClientSecure.h>
 #include <PubSubClient.h>
 #include "time.h"
+#include "esp_sntp.h"
 #include "esp_task_wdt.h"
 #include "esp_timer.h"
 #include "config.h"
@@ -29,6 +30,8 @@
 #define TIME_SYNC_TIMEOUT_MS 15000UL
 #define MQTT_TLS_PORT 8883
 #define TIME_VALID_THRESHOLD 1700000000UL
+#define NTP_SERVER_1 "pool.ntp.org"
+#define NTP_SERVER_2 "time.nist.gov"
 
 WiFiClientSecure net;
 PubSubClient mqtt(net);
@@ -52,6 +55,7 @@ unsigned long lastDiagSend = 0;
 unsigned long lastPinDiag = 0;
 bool initialZeroSent = false;
 bool timeSynced = false;
+char ntpFromDhcp[16] = "";
 
 #pragma pack(push, 1)
 struct DiagData {
@@ -158,7 +162,20 @@ void SamplerTask(void* arg)
 
 bool SyncTime()
 {
-  configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+  const ip_addr_t* dhcpServer = esp_sntp_getserver(0);
+  if(dhcpServer != NULL && !ip_addr_isany_val(*dhcpServer))
+  {
+    snprintf(ntpFromDhcp, sizeof(ntpFromDhcp), "%s", ipaddr_ntoa(dhcpServer));
+  }
+  if(ntpFromDhcp[0] != '\0')
+  {
+    Serial.printf("NTP z DHCP: %s\n", ntpFromDhcp);
+    configTime(0, 0, ntpFromDhcp, NTP_SERVER_1, NTP_SERVER_2);
+  }
+  else
+  {
+    configTime(0, 0, NTP_SERVER_1, NTP_SERVER_2);
+  }
   unsigned long start = millis();
   time_t now = time(nullptr);
   while(now < TIME_VALID_THRESHOLD && millis() - start < TIME_SYNC_TIMEOUT_MS)
@@ -215,6 +232,7 @@ void setup() {
   Serial.begin(115200);
   analogReadResolution(12);
   analogSetAttenuation(ADC_11db);
+  esp_sntp_servermode_dhcp(true);
   WiFi.mode(WIFI_STA);
   WiFi.begin(WifiSSID, WifiPassword);
   net.setCACert(MQTTCACert);
