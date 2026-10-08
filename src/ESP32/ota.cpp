@@ -8,7 +8,10 @@
 #include "secret.h"
 
 #ifndef OTA_CHECK_INTERVAL_MS
-#define OTA_CHECK_INTERVAL_MS (60UL * 60UL * 1000UL)
+#define OTA_CHECK_INTERVAL_MS (24UL * 60UL * 60UL * 1000UL)
+#endif
+#ifndef OTA_MIN_INTERVAL_MS
+#define OTA_MIN_INTERVAL_MS (5UL * 60UL * 1000UL)
 #endif
 #ifndef FW_VERSION
 #define FW_VERSION 0
@@ -19,6 +22,12 @@ extern uint16_t otaFailures;
 
 unsigned long otaLastCheck = 0;
 bool otaFirstRun = true;
+bool otaRequested = false;
+
+void otaRequest()
+{
+  otaRequested = true;
+}
 
 void doOTA()
 {
@@ -56,10 +65,6 @@ void doOTA()
 
 void otaLoop()
 {
-  if(!otaFirstRun && millis() - otaLastCheck < OTA_CHECK_INTERVAL_MS)
-  {
-    return;
-  }
   if(WiFi.status() != WL_CONNECTED)
   {
     return;
@@ -68,11 +73,21 @@ void otaLoop()
   {
     return;
   }
+
+  bool cooledDown = millis() - otaLastCheck >= OTA_MIN_INTERVAL_MS;
+  if(!otaFirstRun
+     && !(otaRequested && cooledDown)
+     && millis() - otaLastCheck < OTA_CHECK_INTERVAL_MS)
+  {
+    return;
+  }
+
   if(otaFirstRun)
   {
-    Serial.printf("OTA: interval kontroly %lu ms\n", (unsigned long)OTA_CHECK_INTERVAL_MS);
+    Serial.printf("OTA: zalozni interval kontroly %lu ms\n", (unsigned long)OTA_CHECK_INTERVAL_MS);
   }
   otaFirstRun = false;
+  otaRequested = false;
   otaLastCheck = millis();
   doOTA();
 }

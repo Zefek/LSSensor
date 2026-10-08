@@ -187,6 +187,22 @@ bool SyncTime()
   return now >= TIME_VALID_THRESHOLD;
 }
 
+void MQTTMessageReceive(char* topic, uint8_t* payload, unsigned int length)
+{
+  if(strcmp(topic, LSSENSOR_OTA) != 0)
+  {
+    return;
+  }
+  if(length != sizeof(OTA_NOTIFY_PAYLOAD) - 1
+     || memcmp(payload, OTA_NOTIFY_PAYLOAD, length) != 0)
+  {
+    Serial.printf("OTA: neplatna zprava na %s (%u B)\n", topic, length);
+    return;
+  }
+  Serial.println("OTA: prisla notifikace");
+  otaRequest();
+}
+
 bool Connect()
 {
   if(WiFi.status() != WL_CONNECTED)
@@ -222,6 +238,11 @@ bool Connect()
     {
       currentDiagData.mqttFailCount++;
     }
+    if(ok)
+    {
+      mqtt.subscribe(LSSENSOR_OTA, 1);
+      otaRequest();
+    }
     return ok;
   }
   return true;
@@ -237,6 +258,7 @@ void setup() {
   WiFi.begin(WifiSSID, WifiPassword);
   net.setCACert(MQTTCACert);
   mqtt.setServer(MQTTHost, MQTT_TLS_PORT);
+  mqtt.setCallback(MQTTMessageReceive);
   mqtt.setBufferSize(256);
   mqtt.setKeepAlive(60);
   xTaskCreatePinnedToCore(SamplerTask, "sampler", SAMPLER_STACK, NULL, SAMPLER_PRIORITY, NULL, SAMPLER_CORE);
